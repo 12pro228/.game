@@ -8,7 +8,7 @@ pygame.display.set_caption("Pudge breakout")
 clock = pygame.time.Clock()
 secret_lvl = False
 game_over = False
-state = "playing"       
+state = "title"
 boss = pygame.Rect(300, 100, 200, 70)   
 boss_hp = 0
 menu_choice = 0         
@@ -51,9 +51,9 @@ def build_normal_level():
             secret_platforms.append(rect)
         elif roll < 0.15:
             shield_platforms.append(rect)
-        elif roll < 0.36:
+        elif roll < 0.26:
             neon_platforms.append(rect)
-        elif roll < 0.46:
+        elif roll < 0.36:
             void_platforms.append(rect)
         elif roll < 0.48:
             candy_platforms.append(rect)
@@ -89,20 +89,36 @@ def draw_secret_menu():
         screen.blit(label, label.get_rect(center=(400, 380 + i * 70)))
     pygame.display.flip()
 
-def load_block(name):
-    image_path = Path(__file__).resolve().parent / f"{name}.png"
+def load_block(filename):
+    image_path = Path(__file__).resolve().parent / filename
     image = pygame.image.load(str(image_path)).convert_alpha()
     return pygame.transform.scale(image, (50, 15))
 
 block_images = {
-    "normal": load_block("platform"),
-    "gold": load_block("golden_platform"),
-    "secret": load_block("secret_platform"),
-    "shield": load_block("shield_platform"),
-    "neon": load_block("neon_platform"),
-    "void": load_block("void_platform"),
-    "candy": load_block("candy_platform"),
+    "normal": load_block("platform (3).png"),
+    "gold": load_block("golden_platform (3).png"),
+    "secret": load_block("secret_platform (3).png"),
+    "shield": load_block("shield_platform.png"),
+    "neon": load_block("neon_platform.png"),
+    "void": load_block("void_platform (3).png"),
+    "candy": load_block("candy_platform (3).png"),
 }
+heart_path = Path(__file__).resolve().parent / "hp.png"
+heart_image = pygame.image.load(str(heart_path)).convert_alpha()
+heart_image = pygame.transform.scale(heart_image, (24, 24))
+point_path = Path(__file__).resolve().parent / "point.png"
+point_image = pygame.image.load(str(point_path)).convert_alpha()
+point_image = pygame.transform.scale(point_image, (24, 24))
+menu_image_path = Path(__file__).resolve().parent / "menu (1).png"
+menu_image = pygame.image.load(str(menu_image_path)).convert_alpha()
+menu_image = pygame.transform.scale(menu_image, (448, 704))
+menu_rect = menu_image.get_rect(center=(400, 400))
+start_button = pygame.Rect(
+    menu_rect.x + 32,
+    menu_rect.y + 528,
+    384,
+    176,
+)
 
 build_normal_level()
 
@@ -134,9 +150,28 @@ while running:
                     build_normal_level()
                     ball_stuck = True
                     state = "playing"
+        elif (
+            state == "title"
+            and event.type == pygame.MOUSEBUTTONDOWN
+            and event.button == 1
+            and start_button.collidepoint(event.pos)
+        ):
+            state = "playing"
+        elif state == "title" and event.type == pygame.KEYDOWN:
+            if event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                state = "playing"
 
     if not running:
         break
+
+
+
+    if state == "title":
+        screen.fill((0, 0, 0))
+        screen.blit(menu_image, menu_rect)
+        pygame.display.flip()
+        clock.tick(60)
+        continue
 
     if state == "menu":
         draw_secret_menu()
@@ -254,16 +289,19 @@ while running:
         for platform, hp in zip(blocks, hp_values):
             if hp > 0:
                 screen.blit(image, platform)
-                hp_label = hp_font.render(str(hp), True, (0, 0, 0))
-                screen.blit(hp_label, hp_label.get_rect(center=platform.center))
     if state == "secret" and boss_hp > 0:
         pygame.draw.rect(screen, (255, 0, 0), boss)
         boss_label = menu_font.render(f"Boss HP: {boss_hp}", True, (255, 255, 255))
         screen.blit(boss_label, boss_label.get_rect(center=boss.center))
     pygame.draw.rect(screen, (0, 200, 100), player)
     pygame.draw.rect(screen, (255, 255, 0), ball)
-    hud = hp_font.render(f"Lives: {game_hp}   Points: {points}", True, (255, 255, 255))
-    screen.blit(hud, (10, 10))
+    lives_label = hp_font.render("Lives:", True, (255, 255, 255))
+    screen.blit(lives_label, (10, 14))
+    for life in range(max(0, game_hp)):
+        screen.blit(heart_image, (60 + life * 30, 8))
+    screen.blit(point_image, (160, 8))
+    score_label = hp_font.render(str(points), True, (255, 255, 255))
+    screen.blit(score_label, (190, 14))
     pygame.display.flip()
     clock.tick(60)
 
