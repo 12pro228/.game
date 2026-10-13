@@ -1,4 +1,6 @@
 import pygame
+import random
+
 pygame.init()
 screen = pygame.display.set_mode((800, 800))
 pygame.display.set_caption("Pudge breakout")
@@ -8,12 +10,25 @@ game_hp = 3
 points = 0
 player = pygame.Rect(375, 600, 100, 15)
 ball = pygame.Rect(419, 580, 15, 15)
-platforms = [
-    pygame.Rect(x, y, 50, 15)
+positions = [
+    (x, y)
     for x in (0, 100, 170, 240, 310, 380, 450, 520, 590, 660, 730)
-    for y in (100, 130, 160)
+    for y in (100, 130, 160, 130)
 ]
+
+platforms = []
+gold_platforms = []
+
+
+for x, y in positions:
+    rect = pygame.Rect(x, y, 50, 15)
+    if random.random() < 0.05:        
+        gold_platforms.append(rect)
+    else:
+        platforms.append(rect)
+
 platform_hp = [1] * len(platforms)
+gold_platform_hp = [2] * len(gold_platforms)
 
 ball_stuck = True          
 ball_speed_x = 0
@@ -100,11 +115,21 @@ while running:
                 points += 5
                 break
 
+        for index, platform in enumerate(gold_platforms):
+            if gold_platform_hp[index] > 0 and ball.colliderect(platform):
+                gold_platform_hp[index] -= 1
+                ball_speed_y = -ball_speed_y
+                points += 50
+                break
+
     screen.fill((30, 30, 30))
     for index, platform in enumerate(platforms):
         if platform_hp[index] > 0:
             color = (255, 0, 0) if index == 0 else (0, 200, 100)
             pygame.draw.rect(screen, color, platform)
+    for index, platform in enumerate(gold_platforms):
+        if gold_platform_hp[index] > 0:
+            pygame.draw.rect(screen, (255, 255, 0), platform)
     pygame.draw.rect(screen, (0, 200, 100), player)
     pygame.draw.rect(screen, (255, 255, 0), ball)
     pygame.display.flip()
