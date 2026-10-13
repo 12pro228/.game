@@ -13,22 +13,41 @@ ball = pygame.Rect(419, 580, 15, 15)
 positions = [
     (x, y)
     for x in (0, 100, 170, 240, 310, 380, 450, 520, 590, 660, 730)
-    for y in (100, 130, 160, 130)
+    for y in (100, 130, 160, 190)
 ]
 
 platforms = []
 gold_platforms = []
-
+secret_platforms = []
+shield_platforms = []
+neon_platforms = []
+void_platforms = []
+candy_platforms = []
 
 for x, y in positions:
     rect = pygame.Rect(x, y, 50, 15)
     if random.random() < 0.05:        
         gold_platforms.append(rect)
+    elif random.random() < 0.0005:  
+        secret_platforms.append(rect)
+    elif random.random() < 0.1:  
+        shield_platforms.append(rect)
+    elif random.random() < 0.3:  
+        neon_platforms.append(rect)
+    elif random.random() < 0.1:  
+        void_platforms.append(rect)
+    elif random.random() < 0.02:  
+        candy_platforms.append(rect)
     else:
         platforms.append(rect)
 
 platform_hp = [1] * len(platforms)
 gold_platform_hp = [2] * len(gold_platforms)
+secret_platform_hp = [15] * len(secret_platforms)
+shield_platform_hp = [4] * len(shield_platforms)
+neon_platform_hp = [2] * len(neon_platforms)
+void_platform_hp = [5] * len(void_platforms)
+candy_platform_hp = [1] * len(candy_platforms)
 
 ball_stuck = True          
 ball_speed_x = 0
@@ -121,6 +140,36 @@ while running:
                 ball_speed_y = -ball_speed_y
                 points += 50
                 break
+        for index, platform in enumerate(secret_platforms):
+            if secret_platform_hp[index] > 0 and ball.colliderect(platform):
+                secret_platform_hp[index] -= 1
+                ball_speed_y = -ball_speed_y
+                points += 1000
+                break
+        for index, platform in enumerate(shield_platforms):
+            if shield_platform_hp[index] > 0 and ball.colliderect(platform):
+                shield_platform_hp[index] -= 1
+                ball_speed_y = -ball_speed_y
+                points += 5
+                break
+        for index, platform in enumerate(neon_platforms):
+            if neon_platform_hp[index] > 0 and ball.colliderect(platform):
+                neon_platform_hp[index] -= 1
+                ball_speed_y = -ball_speed_y
+                points += 70
+                break
+        for index, platform in enumerate(void_platforms):
+            if void_platform_hp[index] > 0 and ball.colliderect(platform):
+                void_platform_hp[index] -= 1
+                ball_speed_y = -ball_speed_y
+                points += 100
+                break
+        for index, platform in enumerate(candy_platforms):
+            if candy_platform_hp[index] > 0 and ball.colliderect(platform):
+                candy_platform_hp[index] -= 1
+                ball_speed_y = -ball_speed_y
+                points += 30
+                break
 
     screen.fill((30, 30, 30))
     for index, platform in enumerate(platforms):
@@ -130,6 +179,24 @@ while running:
     for index, platform in enumerate(gold_platforms):
         if gold_platform_hp[index] > 0:
             pygame.draw.rect(screen, (255, 255, 0), platform)
+    for index, platform in enumerate(secret_platforms):
+        if secret_platform_hp[index] > 0:
+            pygame.draw.rect(screen, (255, 0, 255), platform)        
+        half = pygame.Rect(platform.x + platform.width // 2, platform.y,
+                           platform.width // 2, platform.height)
+        pygame.draw.rect(screen, (0, 255, 255), half) 
+    for index, platform in enumerate(shield_platforms):
+        if shield_platform_hp[index] > 0:
+            pygame.draw.rect(screen, (0, 255, 255), platform)
+    for index, platform in enumerate(neon_platforms):
+        if neon_platform_hp[index] > 0:
+            pygame.draw.rect(screen, (255, 255, 255), platform)
+    for index, platform in enumerate(void_platforms):
+        if void_platform_hp[index] > 0:
+            pygame.draw.rect(screen, (0, 0, 0), platform)
+    for index, platform in enumerate(candy_platforms):
+        if candy_platform_hp[index] > 0:
+            pygame.draw.rect(screen, (255, 182, 193), platform)
     pygame.draw.rect(screen, (0, 200, 100), player)
     pygame.draw.rect(screen, (255, 255, 0), ball)
     pygame.display.flip()
