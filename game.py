@@ -9,14 +9,17 @@ clock = pygame.time.Clock()
 secret_lvl = False
 game_over = False
 state = "title"
-boss = pygame.Rect(300, 100, 200, 70)   
+boss = pygame.Rect(310, 90, 180, 170)
 boss_hp = 0
+boss_max_hp = 50
 menu_choice = 0         
 menu_font = pygame.font.Font(None, 56)
 game_hp = 3
 points = 0
 player = pygame.Rect(375, 600, 100, 15)
 ball = pygame.Rect(419, 580, 15, 15)
+ball_trail = []
+ball_angle = 0
 positions = [
     (x, y)
     for x in (0, 100, 170, 240, 310, 380, 450, 520, 590, 660, 730)
@@ -63,7 +66,7 @@ def build_normal_level():
         secret_platforms.append(platforms.pop())
     platform_hp[:] = [1] * len(platforms)
     gold_platform_hp[:] = [2] * len(gold_platforms)
-    secret_platform_hp[:] = [15] * len(secret_platforms)
+    secret_platform_hp[:] = [1] * len(secret_platforms)
     shield_platform_hp[:] = [4] * len(shield_platforms)
     neon_platform_hp[:] = [2] * len(neon_platforms)
     void_platform_hp[:] = [5] * len(void_platforms)
@@ -77,7 +80,7 @@ def build_secret_level():
     for hp_list in (platform_hp, gold_platform_hp, secret_platform_hp, shield_platform_hp,
                     neon_platform_hp, void_platform_hp, candy_platform_hp):
         hp_list.clear()
-    boss_hp = 50
+    boss_hp = boss_max_hp
 
 def draw_secret_menu():
     screen.fill((20, 20, 40))
@@ -94,6 +97,10 @@ def load_block(filename):
     image = pygame.image.load(str(image_path)).convert_alpha()
     return pygame.transform.scale(image, (50, 15))
 
+def load_texture(filename):
+    image_path = Path(__file__).resolve().parent / filename
+    return pygame.image.load(str(image_path)).convert_alpha()
+
 block_images = {
     "normal": load_block("platform (3).png"),
     "gold": load_block("golden_platform (3).png"),
@@ -103,9 +110,20 @@ block_images = {
     "void": load_block("void_platform (3).png"),
     "candy": load_block("candy_platform (3).png"),
 }
+player_image = pygame.transform.scale(load_texture("player.png"), (100, 22))
+ball_image = pygame.transform.scale(load_texture("ball (2).png"), (15, 25))
+player.size = player_image.get_size()
+ball.size = ball_image.get_size()
+ball_mask = pygame.mask.Mask(ball.size, fill=True)
 heart_path = Path(__file__).resolve().parent / "hp.png"
 heart_image = pygame.image.load(str(heart_path)).convert_alpha()
 heart_image = pygame.transform.scale(heart_image, (24, 24))
+boss_path = Path(__file__).resolve().parent / "big_pudge_x4.png"
+boss_image = pygame.image.load(str(boss_path)).convert_alpha()
+boss_image = pygame.transform.smoothscale(boss_image, boss.size)
+boss_mask = pygame.mask.from_surface(boss_image)
+boss_hotbar_path = Path(__file__).resolve().parent / "boss_hotbar_hp.png"
+boss_hotbar_image = pygame.image.load(str(boss_hotbar_path)).convert_alpha()
 point_path = Path(__file__).resolve().parent / "point.png"
 point_image = pygame.image.load(str(point_path)).convert_alpha()
 point_image = pygame.transform.scale(point_image, (24, 24))
@@ -204,9 +222,15 @@ while running:
     if ball_stuck:
         ball.centerx = player.centerx
         ball.bottom = player.top
+        ball_trail.clear()
+        ball_angle = 0
     else: 
         ball.x += ball_speed_x
         ball.y += ball_speed_y
+        ball_angle = (ball_angle + 12) % 360
+        ball_trail.append(ball.center)
+        if len(ball_trail) > 8:
+            del ball_trail[0]
 
     if ball.left <= 0:
      ball.left = 0
@@ -232,16 +256,23 @@ while running:
         ball_stuck = True
         ball_speed_x = 0
         ball_speed_y = 0
+        ball_trail.clear()
         continue
 
     if ball.top <= 0:
         ball.top = 0
         ball_speed_y = abs(ball_speed_y)
 
-    if state == "secret" and boss_hp > 0 and ball.colliderect(boss):
+    boss_offset = (ball.left - boss.left, ball.top - boss.top)
+    boss_hit = boss_mask.overlap(ball_mask, boss_offset) is not None
+    if state == "secret" and boss_hp > 0 and not ball_stuck and boss_hit:
         boss_hp -= 1
-        ball.top = boss.bottom
-        ball_speed_y = abs(ball_speed_y)
+        if ball_speed_y < 0:
+            ball.top = boss.bottom
+            ball_speed_y = abs(ball_speed_y)
+        else:
+            ball.bottom = boss.top
+            ball_speed_y = -abs(ball_speed_y)
         if boss_hp == 0:
             state = "won"
 
@@ -290,11 +321,43 @@ while running:
             if hp > 0:
                 screen.blit(image, platform)
     if state == "secret" and boss_hp > 0:
-        pygame.draw.rect(screen, (255, 0, 0), boss)
-        boss_label = menu_font.render(f"Boss HP: {boss_hp}", True, (255, 255, 255))
-        screen.blit(boss_label, boss_label.get_rect(center=boss.center))
-    pygame.draw.rect(screen, (0, 200, 100), player)
-    pygame.draw.rect(screen, (255, 255, 0), ball)
+        screen.blit(boss_image, boss)
+        boss_bar = pygame.Rect(boss.left, boss.top - 56, boss.width, 45)
+        boss_label = hp_font.render(
+            f"Boss HP: {boss_hp}/{boss_max_hp}", True, (255, 255, 255)
+        )
+        screen.blit(
+            boss_label,
+            boss_label.get_rect(midbottom=(boss.centerx, boss_bar.top - 3)),
+        )
+        health_width = round(
+            boss_bar.width * max(0, boss_hp) / boss_max_hp
+        )
+        pygame.draw.rect(screen, (45, 25, 25), boss_bar)
+        if health_width > 0:
+            health_bar_image = pygame.transform.scale(
+                boss_hotbar_image, (health_width, boss_bar.height)
+            )
+            screen.blit(health_bar_image, boss_bar)
+    if not ball_stuck:
+        trail_colors = (
+            (100, 15, 5),
+            (150, 25, 5),
+            (190, 40, 5),
+            (220, 65, 5),
+            (240, 95, 5),
+            (255, 125, 10),
+            (255, 160, 20),
+            (255, 205, 45),
+        )
+        for index, position in enumerate(ball_trail):
+            radius = 2 + index // 3
+            pygame.draw.circle(screen, trail_colors[index], position, radius)
+    screen.blit(player_image, player)
+    rotated_ball = pygame.transform.rotate(
+        ball_image, ball_angle if not ball_stuck else 0
+    )
+    screen.blit(rotated_ball, rotated_ball.get_rect(center=ball.center))
     lives_label = hp_font.render("Lives:", True, (255, 255, 255))
     screen.blit(lives_label, (10, 14))
     for life in range(max(0, game_hp)):
