@@ -1,5 +1,6 @@
 import pygame
 import random
+from pathlib import Path
 
 pygame.init()
 screen = pygame.display.set_mode((800, 800))
@@ -48,7 +49,7 @@ def build_normal_level():
             gold_platforms.append(rect)
         elif roll < 0.06:
             secret_platforms.append(rect)
-        elif roll < 0.065:
+        elif roll < 0.15:
             shield_platforms.append(rect)
         elif roll < 0.36:
             neon_platforms.append(rect)
@@ -88,6 +89,21 @@ def draw_secret_menu():
         screen.blit(label, label.get_rect(center=(400, 380 + i * 70)))
     pygame.display.flip()
 
+def load_block(name):
+    image_path = Path(__file__).resolve().parent / f"{name}.png"
+    image = pygame.image.load(str(image_path)).convert_alpha()
+    return pygame.transform.scale(image, (50, 15))
+
+block_images = {
+    "normal": load_block("platform"),
+    "gold": load_block("golden_platform"),
+    "secret": load_block("secret_platform"),
+    "shield": load_block("shield_platform"),
+    "neon": load_block("neon_platform"),
+    "void": load_block("void_platform"),
+    "candy": load_block("candy_platform"),
+}
+
 build_normal_level()
 
 ball_stuck = True          
@@ -97,28 +113,47 @@ ball_speed_y = 0
 #MAIN GAME LOOP |(NONONO TOCH)
 
 speed = 5
+hp_font = pygame.font.Font(None, 18)
 
 running = True
 while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
-        if state == "menu" and event.type == pygame.KEYDOWN:
+        elif state == "menu" and event.type == pygame.KEYDOWN:
             if event.key in (pygame.K_UP, pygame.K_DOWN, pygame.K_w, pygame.K_s):
                 menu_choice = 1 - menu_choice
-            if event.key == pygame.K_RETURN:
+            elif event.key == pygame.K_RETURN:
                 if menu_choice == 1:
                     build_secret_level()
                     ball_stuck = True
+                    ball_speed_x = 0
+                    ball_speed_y = 0
                     state = "secret"
                 else:
                     build_normal_level()
+                    ball_stuck = True
                     state = "playing"
+
+    if not running:
+        break
 
     if state == "menu":
         draw_secret_menu()
         clock.tick(60)
         continue
+
+    if state == "game_over" or state == "won":
+        screen.fill((30, 30, 30))
+        result = "Boss defeated!" if state == "won" else "Game Over"
+        result_color = (0, 255, 0) if state == "won" else (255, 0, 0)
+        result_text = menu_font.render(result, True, result_color)
+        screen.blit(result_text, result_text.get_rect(center=(400, 400)))
+        score_text = menu_font.render(f"Points: {points}", True, (255, 255, 0))
+        screen.blit(score_text, score_text.get_rect(center=(400, 480)))
+        pygame.display.flip()
+        pygame.time.wait(3000)
+        break
 
     keys = pygame.key.get_pressed()
     if keys[pygame.K_LEFT] or keys[pygame.K_a]:
@@ -145,7 +180,7 @@ while running:
      ball.right = 800
      ball_speed_x = -abs(ball_speed_x)
 
-    if ball.colliderect(player) and ball_speed_y > 0:
+    if not ball_stuck and ball.colliderect(player) and ball_speed_y > 0:
             hit_offset = max(-1, min(1, (ball.centerx - player.centerx) / (player.width / 2)))
             ball_speed_x = round(hit_offset * 7)
             ball_speed_y = -abs(ball_speed_y)
@@ -155,75 +190,54 @@ while running:
         ball_speed_x = 0
         ball_speed_y = -5
 
-    #game hp
-    if ball.top > 800:
-            game_hp -= 1
-            if game_hp <= 0:
-                game_over = True
-            ball_stuck = True
-
-    if game_over:
-        screen.fill((30, 30, 30))
-        font = pygame.font.Font(None, 74)
-        text = font.render("Game Over", True, (255, 0, 0))
-        text_rect = text.get_rect(center=(400, 400))
-        screen.blit(text, text_rect)
-        stats_font = pygame.font.Font(None, 48)
-        points_text = stats_font.render(f"Points: {points}", True, (255, 255, 0))
-        points_rect = points_text.get_rect(center=(400, 500))
-        screen.blit(points_text, points_rect)
-        pygame.display.flip()
-        pygame.time.wait(3000) #clouse time 
-        running = False
+    if not ball_stuck and ball.top > screen.get_height():
+        game_hp -= 1
+        if game_hp <= 0:
+            state = "game_over"
+        ball_stuck = True
+        ball_speed_x = 0
+        ball_speed_y = 0
         continue
 
     if ball.top <= 0:
         ball.top = 0
         ball_speed_y = abs(ball_speed_y)
 
-    if ball.top <= 700:
-        for index, platform in enumerate(platforms):
-            if platform_hp[index] > 0 and ball.colliderect(platform):
-                platform_hp[index] -= 1
-                ball_speed_y = -ball_speed_y
-                points += 5
-                break
+    if state == "secret" and boss_hp > 0 and ball.colliderect(boss):
+        boss_hp -= 1
+        ball.top = boss.bottom
+        ball_speed_y = abs(ball_speed_y)
+        if boss_hp == 0:
+            state = "won"
 
-        for index, platform in enumerate(gold_platforms):
-            if gold_platform_hp[index] > 0 and ball.colliderect(platform):
-                gold_platform_hp[index] -= 1
+    platform_groups = (
+        (platforms, platform_hp, 5, "normal"),
+        (gold_platforms, gold_platform_hp, 50, "gold"),
+        (secret_platforms, secret_platform_hp, 1000, "secret"),
+        (shield_platforms, shield_platform_hp, 5, "shield"),
+        (neon_platforms, neon_platform_hp, 70, "neon"),
+        (void_platforms, void_platform_hp, 100, "void"),
+        (candy_platforms, candy_platform_hp, 30, "candy"),
+    )
+    if not ball_stuck and ball.top <= 700:
+        for blocks, hp_values, point_value, _ in platform_groups:
+            hit_index = next(
+                (
+                    index for index, block in enumerate(blocks)
+                    if hp_values[index] > 0 and ball.colliderect(block)
+                ),
+                None,
+            )
+            if hit_index is not None:
+                hit_platform = blocks[hit_index]
+                hp_values[hit_index] -= 1
+                if hp_values[hit_index] == 0:
+                    points += point_value
                 ball_speed_y = -ball_speed_y
-                points += 50
-                break
-        for index, platform in enumerate(secret_platforms):
-            if secret_platform_hp[index] > 0 and ball.colliderect(platform):
-                secret_platform_hp[index] -= 1
-                ball_speed_y = -ball_speed_y
-                points += 1000
-                break
-        for index, platform in enumerate(shield_platforms):
-            if shield_platform_hp[index] > 0 and ball.colliderect(platform):
-                shield_platform_hp[index] -= 1
-                ball_speed_y = -ball_speed_y
-                points += 5
-                break
-        for index, platform in enumerate(neon_platforms):
-            if neon_platform_hp[index] > 0 and ball.colliderect(platform):
-                neon_platform_hp[index] -= 1
-                ball_speed_y = -ball_speed_y
-                points += 70
-                break
-        for index, platform in enumerate(void_platforms):
-            if void_platform_hp[index] > 0 and ball.colliderect(platform):
-                void_platform_hp[index] -= 1
-                ball_speed_y = -ball_speed_y
-                points += 100
-                break
-        for index, platform in enumerate(candy_platforms):
-            if candy_platform_hp[index] > 0 and ball.colliderect(platform):
-                candy_platform_hp[index] -= 1
-                ball_speed_y = -ball_speed_y
-                points += 30
+                if ball_speed_y > 0:
+                    ball.top = hit_platform.bottom
+                else:
+                    ball.bottom = hit_platform.top
                 break
 
     if state == "playing" and secret_platforms and not any(
@@ -234,43 +248,22 @@ while running:
         clock.tick(60)
         continue
 
-    if state == "secret" and boss_hp > 0 and ball.colliderect(boss):
-        boss_hp -= 1
-        ball.top = boss.bottom
-        ball_speed_y = abs(ball_speed_y)
-
     screen.fill((30, 30, 30))
-    for index, platform in enumerate(platforms):
-        if platform_hp[index] > 0:
-            color = (255, 0, 0) if index == 0 else (0, 200, 100)
-            pygame.draw.rect(screen, color, platform)
-    for index, platform in enumerate(gold_platforms):
-        if gold_platform_hp[index] > 0:
-            pygame.draw.rect(screen, (255, 255, 0), platform)
-    for index, platform in enumerate(secret_platforms):
-        if secret_platform_hp[index] > 0:
-            pygame.draw.rect(screen, (255, 0, 255), platform)        
-            half = pygame.Rect(platform.x + platform.width // 2, platform.y,
-                               platform.width // 2, platform.height)
-            pygame.draw.rect(screen, (0, 255, 255), half)
-    for index, platform in enumerate(shield_platforms):
-        if shield_platform_hp[index] > 0:
-            pygame.draw.rect(screen, (0, 255, 255), platform)
-    for index, platform in enumerate(neon_platforms):
-        if neon_platform_hp[index] > 0:
-            pygame.draw.rect(screen, (255, 255, 255), platform)
-    for index, platform in enumerate(void_platforms):
-        if void_platform_hp[index] > 0:
-            pygame.draw.rect(screen, (0, 0, 0), platform)
-    for index, platform in enumerate(candy_platforms):
-        if candy_platform_hp[index] > 0:
-            pygame.draw.rect(screen, (255, 182, 193), platform)
+    for blocks, hp_values, _, image_key in platform_groups:
+        image = block_images[image_key]
+        for platform, hp in zip(blocks, hp_values):
+            if hp > 0:
+                screen.blit(image, platform)
+                hp_label = hp_font.render(str(hp), True, (0, 0, 0))
+                screen.blit(hp_label, hp_label.get_rect(center=platform.center))
     if state == "secret" and boss_hp > 0:
         pygame.draw.rect(screen, (255, 0, 0), boss)
         boss_label = menu_font.render(f"Boss HP: {boss_hp}", True, (255, 255, 255))
         screen.blit(boss_label, boss_label.get_rect(center=boss.center))
     pygame.draw.rect(screen, (0, 200, 100), player)
     pygame.draw.rect(screen, (255, 255, 0), ball)
+    hud = hp_font.render(f"Lives: {game_hp}   Points: {points}", True, (255, 255, 255))
+    screen.blit(hud, (10, 10))
     pygame.display.flip()
     clock.tick(60)
 
