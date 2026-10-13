@@ -3,6 +3,9 @@ pygame.init()
 screen = pygame.display.set_mode((800, 800))
 pygame.display.set_caption("Pudge breakout")
 clock = pygame.time.Clock()
+game_over = False
+game_hp = 3
+points = 0
 player = pygame.Rect(375, 600, 100, 15)
 ball = pygame.Rect(419, 580, 15, 15)
 platforms = [
@@ -56,25 +59,45 @@ while running:
             ball_speed_x = round(hit_offset * 7)
             ball_speed_y = -abs(ball_speed_y)
 
-    if ball.top > 800:
-            ball_stuck = True
-
     if ball_stuck and keys[pygame.K_SPACE]:
         ball_stuck = False
         ball_speed_x = 0
         ball_speed_y = -5
-
-
-    #game hp
-
-
     
+    
+    #game hp
+    if ball.top > 800:
+            game_hp -= 1
+            if game_hp <= 0:
+                game_over = True
+            ball_stuck = True
+
+    if game_over:
+        screen.fill((30, 30, 30))
+        font = pygame.font.Font(None, 74)
+        text = font.render("Game Over", True, (255, 0, 0))
+        text_rect = text.get_rect(center=(400, 400))
+        screen.blit(text, text_rect)
+        stats_font = pygame.font.Font(None, 48)
+        points_text = stats_font.render(f"Points: {points}", True, (255, 255, 0))
+        points_rect = points_text.get_rect(center=(400, 500))
+        screen.blit(points_text, points_rect)
+        pygame.display.flip()
+        pygame.time.wait(3000) #clouse time 
+        running = False
+        continue
+
+    if ball.top <= 0:
+        ball.top = 0
+        ball_speed_y = abs(ball_speed_y)
+
 
     if ball.top <= 700:
         for index, platform in enumerate(platforms):
             if platform_hp[index] > 0 and ball.colliderect(platform):
                 platform_hp[index] -= 1
                 ball_speed_y = -ball_speed_y
+                points += 5
                 break
 
     screen.fill((30, 30, 30))
