@@ -1,14 +1,18 @@
 import pygame
 import random
 from pathlib import Path
+from game_data import get_player_name, record_score, save_player_name
 
 pygame.init()
 screen = pygame.display.set_mode((800, 800))
+pygame.key.start_text_input()
 pygame.display.set_caption("Pudge breakout")
 clock = pygame.time.Clock()
 secret_lvl = False
 game_over = False
-state = "title"
+state = "name_entry"
+player_name_input = ""
+player_name_error = ""
 boss = pygame.Rect(310, 90, 180, 170)
 boss_hp = 0
 boss_max_hp = 50
@@ -154,6 +158,22 @@ while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
+        elif state == "name_entry" and event.type == pygame.TEXTINPUT:
+            if len(player_name_input) + len(event.text) <= 16:
+                player_name_input += event.text
+                player_name_error = ""
+        elif state == "name_entry" and event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_BACKSPACE:
+                player_name_input = player_name_input[:-1]
+                player_name_error = ""
+            elif event.key == pygame.K_RETURN:
+                player_name = player_name_input.strip()
+                if player_name:
+                    save_player_name(player_name)
+                    pygame.key.stop_text_input()
+                    state = "title"
+                else:
+                    player_name_error = "Please enter a nickname."
         elif state == "menu" and event.type == pygame.KEYDOWN:
             if event.key in (pygame.K_UP, pygame.K_DOWN, pygame.K_w, pygame.K_s):
                 menu_choice = 1 - menu_choice
@@ -182,7 +202,23 @@ while running:
     if not running:
         break
 
-
+    if state == "name_entry":
+        screen.fill((20, 20, 40))
+        title = menu_font.render("Create your nickname", True, (255, 220, 80))
+        screen.blit(title, title.get_rect(center=(400, 280)))
+        hint = hp_font.render("Type 1-16 characters, then press Enter", True, (220, 220, 220))
+        screen.blit(hint, hint.get_rect(center=(400, 340)))
+        input_box = pygame.Rect(220, 380, 360, 54)
+        pygame.draw.rect(screen, (45, 45, 70), input_box, border_radius=8)
+        pygame.draw.rect(screen, (255, 220, 80), input_box, width=2, border_radius=8)
+        typed_name = menu_font.render(player_name_input or "_", True, (255, 255, 255))
+        screen.blit(typed_name, typed_name.get_rect(center=input_box.center))
+        if player_name_error:
+            error_text = hp_font.render(player_name_error, True, (255, 100, 100))
+            screen.blit(error_text, error_text.get_rect(center=(400, 465)))
+        pygame.display.flip()
+        clock.tick(60)
+        continue
 
     if state == "title":
         screen.fill((0, 0, 0))
@@ -197,12 +233,15 @@ while running:
         continue
 
     if state == "game_over" or state == "won":
+        result = "Boss defeated" if state == "won" else "Game Over"
+        record_score(get_player_name(), points, result)
         screen.fill((30, 30, 30))
-        result = "Boss defeated!" if state == "won" else "Game Over"
         result_color = (0, 255, 0) if state == "won" else (255, 0, 0)
         result_text = menu_font.render(result, True, result_color)
         screen.blit(result_text, result_text.get_rect(center=(400, 400)))
-        score_text = menu_font.render(f"Points: {points}", True, (255, 255, 0))
+        score_text = menu_font.render(
+            f"{get_player_name()}: {points}", True, (255, 255, 0)
+        )
         screen.blit(score_text, score_text.get_rect(center=(400, 480)))
         pygame.display.flip()
         pygame.time.wait(3000)
