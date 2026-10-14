@@ -36,6 +36,11 @@
     p, li { color: #c4c5d0; line-height: 1.7; }
     h2 { margin-top: 32px; font-size: 1.15rem; }
     ul { padding-left: 22px; }
+    .table-scroll { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; text-align: left; }
+    th, td { padding: 12px 8px; border-bottom: 1px solid #393c50; }
+    th { color: #f1c85b; }
+    .status { min-height: 20px; font-size: 14px; }
     kbd {
       padding: 3px 8px;
       border: 1px solid #55596f;
@@ -60,7 +65,92 @@
       <li>Enter a nickname when the game starts.</li>
     </ul>
 
-    <p class="hint">To play, double-click <strong>start_game.bat</strong> in the game folder.</p>
+    <h2>Top 10 leaderboard</h2>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Ranks</th>
+            <th scope="col">Nicknames</th>
+            <th scope="col">Punktu skaits</th>
+            <th scope="col">Resulti</th>
+            <th scope="col">Dati</th>
+          </tr>
+        </thead>
+        <tbody id="scores">
+          <tr><td colspan="5">Loading scores…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="status" id="status" aria-live="polite"></p>
+
+    <p class="hint">lai spelet, double-click <strong>start_game.bat</strong> in the speles folder.</p>
   </main>
+  <script>
+    const scoresTable = document.querySelector("#scores");
+    const status = document.querySelector("#status");
+
+    async function refreshScores() {
+      try {
+        const response = await fetch("/leaderboard.json", { cache: "no-store" });
+        if (!response.ok) throw new Error("Could not load the local leaderboard.");
+
+        const data = await response.json();
+        if (!Array.isArray(data.scores)) {
+          throw new Error("The local leaderboard file has an invalid format.");
+        }
+
+        const scores = data.scores
+          .filter((entry) =>
+            entry &&
+            typeof entry.name === "string" &&
+            Number.isFinite(Number(entry.score))
+          )
+          .sort((first, second) => Number(second.score) - Number(first.score))
+          .slice(0, 10);
+        scoresTable.replaceChildren();
+
+        if (scores.length === 0) {
+          const row = document.createElement("tr");
+          const cell = document.createElement("td");
+          cell.colSpan = 5;
+          cell.textContent = "No finished games yet.";
+          row.append(cell);
+          scoresTable.append(row);
+        } else {
+          scores.forEach((entry, index) => {
+            const row = document.createElement("tr");
+            const date = new Date(entry.played_at);
+            const values = [
+              index + 1,
+              entry.name,
+              Number(entry.score).toLocaleString(),
+              typeof entry.result === "string" ? entry.result : "",
+              Number.isNaN(date.getTime()) ? "" : date.toLocaleString(),
+            ];
+            values.forEach((value) => {
+              const cell = document.createElement("td");
+              cell.textContent = value;
+              row.append(cell);
+            });
+            scoresTable.append(row);
+          });
+        }
+        status.textContent = "Scores saved on this computer. Refreshes every five seconds.";
+      } catch (error) {
+        scoresTable.replaceChildren();
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = 5;
+        cell.textContent = "Could not load scores. Start the website using start_website.bat.";
+        row.append(cell);
+        scoresTable.append(row);
+        status.textContent = error.message;
+      }
+    }
+
+    refreshScores();
+    window.setInterval(refreshScores, 5000);
+  </script>
 </body>
 </html>

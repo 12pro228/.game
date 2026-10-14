@@ -353,6 +353,10 @@ while running:
         clock.tick(60)
         continue
 
+    if boss_hp <= 0 and state == "secret":
+        state = "won but is not end"
+        
+
     screen.fill((30, 30, 30))
     for blocks, hp_values, _, image_key in platform_groups:
         image = block_images[image_key]
