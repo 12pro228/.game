@@ -1,5 +1,6 @@
 import pygame
 import random
+import math
 from pathlib import Path
 from game_data import get_player_name, record_score, save_player_name
 
@@ -16,6 +17,14 @@ player_name_error = ""
 boss = pygame.Rect(310, 90, 180, 170)
 boss_hp = 0
 boss_max_hp = 50
+hook_active = False
+hook_returning = False
+hook_origin = pygame.Vector2()
+hook_position = pygame.Vector2()
+hook_target = pygame.Vector2()
+hook_cooldown = 180
+hook_cooldown_timer = hook_cooldown
+hook_damage_applied = False
 menu_choice = 0         
 menu_font = pygame.font.Font(None, 56)
 game_hp = 3
@@ -77,7 +86,7 @@ def build_normal_level():
     candy_platform_hp[:] = [1] * len(candy_platforms)
 
 def build_secret_level():
-    global boss_hp
+    global boss_hp, hook_active, hook_returning, hook_cooldown_timer
     for lst in (platforms, gold_platforms, secret_platforms, shield_platforms,
                 neon_platforms, void_platforms, candy_platforms):
         lst.clear()
@@ -85,6 +94,9 @@ def build_secret_level():
                     neon_platform_hp, void_platform_hp, candy_platform_hp):
         hp_list.clear()
     boss_hp = boss_max_hp
+    hook_active = False
+    hook_returning = False
+    hook_cooldown_timer = hook_cooldown
 
 def draw_secret_menu():
     screen.fill((20, 20, 40))
@@ -126,8 +138,34 @@ boss_path = Path(__file__).resolve().parent / "big_pudge_x4.png"
 boss_image = pygame.image.load(str(boss_path)).convert_alpha()
 boss_image = pygame.transform.smoothscale(boss_image, boss.size)
 boss_mask = pygame.mask.from_surface(boss_image)
-boss_hotbar_path = Path(__file__).resolve().parent / "boss_hotbar_hp.png"
-boss_hotbar_image = pygame.image.load(str(boss_hotbar_path)).convert_alpha()
+hook_image = pygame.transform.scale(load_texture("hook_x8.png"), (64, 64))
+chain_strip = load_texture("chain_strip_x8.png")
+chain_frame_width = chain_strip.get_width() // 8
+if chain_frame_width * 8 != chain_strip.get_width():
+    raise ValueError("chain_strip_x8.png must contain 8 equally sized frames.")
+chain_frames = [
+    pygame.transform.scale(
+        chain_strip.subsurface(
+            pygame.Rect(
+                index * chain_frame_width,
+                0,
+                chain_frame_width,
+                chain_strip.get_height(),
+            )
+        ),
+        (24, 32),
+    )
+    for index in range(8)
+]
+boss_bar_back_image = pygame.transform.scale(load_texture("bar_back.png"), (152, 32))
+boss_bar_fill_image = pygame.transform.scale(load_texture("bar_fill.png"), (152, 32))
+boss_bar_frame_image = pygame.transform.scale(load_texture("bar_frame.png"), (152, 32))
+boss_portrait_normal_image = pygame.transform.scale(
+    load_texture("portrait_normal.png"), (40, 40)
+)
+boss_portrait_hurt_image = pygame.transform.scale(
+    load_texture("portrait_hurt.png"), (40, 40)
+)
 point_path = Path(__file__).resolve().parent / "point.png"
 point_image = pygame.image.load(str(point_path)).convert_alpha()
 point_image = pygame.transform.scale(point_image, (24, 24))
@@ -302,6 +340,49 @@ while running:
         ball.top = 0
         ball_speed_y = abs(ball_speed_y)
 
+    if state == "secret" and boss_hp > 0:
+        if not hook_active:
+            if hook_cooldown_timer > 0:
+                hook_cooldown_timer -= 1
+            else:
+                hook_origin.update(boss.centerx, boss.bottom)
+                hook_position.update(hook_origin)
+                if ball.centery > hook_origin.y:
+                    aim = pygame.Vector2(
+                        ball.centerx - hook_origin.x,
+                        ball.centery - hook_origin.y,
+                    )
+                    aim.normalize_ip()
+                    distance_to_700 = (700 - hook_origin.y) / aim.y
+                    hook_target.update(hook_origin + aim * distance_to_700)
+                else:
+                    hook_target.update(ball.centerx, 700)
+                hook_target.x = max(32, min(768, hook_target.x))
+                hook_active = True
+                hook_returning = False
+                hook_damage_applied = False
+        else:
+            destination = hook_origin if hook_returning else hook_target
+            travel = destination - hook_position
+            if travel.length() <= 10:
+                hook_position.update(destination)
+                if hook_returning:
+                    hook_active = False
+                    hook_cooldown_timer = hook_cooldown
+                else:
+                    hook_returning = True
+            else:
+                hook_position += travel.normalize() * 10
+
+            hook_rect = pygame.Rect(0, 0, 48, 48)
+            hook_rect.center = round(hook_position.x), round(hook_position.y)
+            if not hook_damage_applied and hook_rect.colliderect(player):
+                game_hp -= 1
+                hook_damage_applied = True
+                hook_returning = True
+                if game_hp <= 0:
+                    state = "game_over"
+
     boss_offset = (ball.left - boss.left, ball.top - boss.top)
     boss_hit = boss_mask.overlap(ball_mask, boss_offset) is not None
     if state == "secret" and boss_hp > 0 and not ball_stuck and boss_hit:
@@ -365,7 +446,10 @@ while running:
                 screen.blit(image, platform)
     if state == "secret" and boss_hp > 0:
         screen.blit(boss_image, boss)
-        boss_bar = pygame.Rect(boss.left, boss.top - 56, boss.width, 45)
+        boss_bar = pygame.Rect(boss.centerx - 56, boss.top - 38, 152, 32)
+        boss_portrait = pygame.Rect(
+            boss_bar.left - 40, boss_bar.centery - 20, 40, 40
+        )
         boss_label = hp_font.render(
             f"Boss HP: {boss_hp}/{boss_max_hp}", True, (255, 255, 255)
         )
@@ -373,15 +457,44 @@ while running:
             boss_label,
             boss_label.get_rect(midbottom=(boss.centerx, boss_bar.top - 3)),
         )
-        health_width = round(
-            boss_bar.width * max(0, boss_hp) / boss_max_hp
-        )
-        pygame.draw.rect(screen, (45, 25, 25), boss_bar)
+        health_ratio = max(0, min(1, boss_hp / boss_max_hp))
+        health_width = round(boss_bar.width * health_ratio)
+        screen.blit(boss_bar_back_image, boss_bar)
         if health_width > 0:
-            health_bar_image = pygame.transform.scale(
-                boss_hotbar_image, (health_width, boss_bar.height)
+            screen.blit(
+                boss_bar_fill_image,
+                boss_bar,
+                pygame.Rect(0, 0, health_width, boss_bar.height),
             )
-            screen.blit(health_bar_image, boss_bar)
+        screen.blit(boss_bar_frame_image, boss_bar)
+        portrait_image = (
+            boss_portrait_normal_image
+            if health_ratio >= 0.5
+            else boss_portrait_hurt_image
+        )
+        screen.blit(portrait_image, boss_portrait)
+    if hook_active:
+        chain_vector = hook_position - hook_origin
+        chain_length = chain_vector.length()
+        if chain_length:
+            chain_angle = math.degrees(
+                math.atan2(chain_vector.y, chain_vector.x)
+            )
+            frame_offset = pygame.time.get_ticks() // 80
+            for segment, distance in enumerate(range(12, int(chain_length), 22)):
+                chain_image = chain_frames[(frame_offset + segment) % len(chain_frames)]
+                rotated_chain = pygame.transform.rotate(
+                    chain_image,
+                    90 - chain_angle,
+                )
+                chain_center = hook_origin + chain_vector * (distance / chain_length)
+                screen.blit(rotated_chain, rotated_chain.get_rect(center=chain_center))
+        hook_vector = hook_target - hook_origin
+        if hook_returning:
+            hook_vector = -hook_vector
+        hook_angle = math.degrees(math.atan2(hook_vector.y, hook_vector.x))
+        rotated_hook = pygame.transform.rotate(hook_image, 180 - hook_angle)
+        screen.blit(rotated_hook, rotated_hook.get_rect(center=hook_position))
     if not ball_stuck:
         trail_colors = (
             (100, 15, 5),
